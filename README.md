@@ -1,4 +1,4 @@
-zkpyro
+zkPyro4
 ======
 
-use zookeeper replace pyro`s naming server 
+use zookeeper replace Pyro4`s naming server 
