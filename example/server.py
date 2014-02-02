@@ -27,4 +27,5 @@ Pyro4.Daemon.serveSimple(
 
 zk = zkPyroClient()
 zk.register("test", Thing())
+print "service running!"
 zk.requestLoop()
