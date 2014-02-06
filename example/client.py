@@ -1,17 +1,26 @@
 #!/bin/env python
 # -*- coding: UTF-8 -*-
 
-from zkPyroClient import zkPyroClient
 import traceback
-zk = zkPyroClient()
+import zkPyro4
+
+zk = zkPyro4.locateNS()
+
 for i in range(1, 100000):
-    raw_input(">>> ")
+    a = raw_input(">>> ")
+    print "input a: "+a
     try:
         thing = zk.lookup("test")
     except:
         traceback.print_exc()
     try:
-        print thing.method(10)
-        print thing.zkPyro4_echo__(10)
+        if len(a) > 0:
+            print "methord:%s"%(thing.method(10))
+        else:
+            print "call:%s"%(thing.call(10))
     except:
         traceback.print_exc()
+
+
+
+

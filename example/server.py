@@ -1,13 +1,28 @@
 #!/bin/env python
 # -*- coding: UTF-8 -*-
 
-import Pyro4
-from zkPyroClient import zkPyroClient
+import zkPyro4
+
 
 class Thing(object):
+    def __init__(self):
+        pass
+
     def method(self, arg):
-        print "call this one"
-        return arg*2
+        print "call this  method"
+        return int(arg)
+
+    def call(self,arg):
+        print "call this  call"
+        return [
+            {"a":"a","b":"b"},
+             {"a":"a","b":"b"},
+              {"a":"a","b":"b"},
+        ]
+
+    @property
+    def prop(self):
+        return __name__
 
 '''
 # ------ normal code ------
@@ -25,7 +40,7 @@ Pyro4.Daemon.serveSimple(
     ns=True, verbose=True)
 '''
 
-zk = zkPyroClient()
+zk = zkPyro4.locateNS()
 zk.register("test", Thing())
 print "service running!"
 zk.requestLoop()

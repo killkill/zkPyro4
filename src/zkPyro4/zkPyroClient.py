@@ -12,6 +12,9 @@ import threading
 import logging
 import signal
 
+from zkPyro4.Exceptions import NoMoreServiceProviderException
+
+
 class zkPyroClient(object):
     def __init__(self, hosts='127.0.0.1:2181',
                  timeout=10.0, client_id=None, handler=None,
@@ -19,7 +22,6 @@ class zkPyroClient(object):
                  randomize_hosts=True, connection_retry=None,
                  command_retry=None, logger=None, root="zkpyro", **kwargs):
         if logger is None:
-            #logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
             self.logger = logging.getLogger(__name__)
             self.logger.setLevel(logging.DEBUG)
             ch = logging.StreamHandler()
@@ -27,7 +29,6 @@ class zkPyroClient(object):
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             ch.setFormatter(formatter)
             self.logger.addHandler(ch)
-
         else:
             self.logger = logger
 
@@ -44,24 +45,25 @@ class zkPyroClient(object):
         self.watchedServices = set()
         self.root = root
         self.serviceCache = {}
-        self.running = True
         self.zk.add_listener(self.zkConnectionListener)
         self.registerDict = {}
+        self.stopEvent = threading.Event()
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
+        # todo:I don`t know why use threading.Timer just fire only one times
         refreshRegisterThread = threading.Thread(target=self.refreshRegister)
         refreshRegisterThread.setDaemon(True)
         refreshRegisterThread.start()
-        th = threading.Thread(target=self.checkServiceProvider)
-        th.setDaemon(True)
-        th.start()
+        checkServiceProviderThread = threading.Thread(target=self.checkServiceProvider)
+        checkServiceProviderThread.setDaemon(True)
+        checkServiceProviderThread.start()
 
     def shutdown(self,s=None,e=None):
         ''' 还需要再写写
         '''
+        self.stopEvent.set()
         self.logger.info("got shutdown signale , exit graceful")
         event = threading.Event()
-        self.running = False
         event.wait(5)
         self.zk.stop()
         event.wait(5)
@@ -69,8 +71,7 @@ class zkPyroClient(object):
 
     def refreshRegister(self):
         self.logger.info("background register refresh thread start ")
-        event = threading.Event()
-        while self.running:
+        while not self.stopEvent.isSet():
             for name in self.registerDict.keys():
                 if not self.zk.connected:
                     self.logger.warning("zk connection lost , skip this time")
@@ -90,15 +91,13 @@ class zkPyroClient(object):
                         traceback.print_exc()
                 else:
                     self.logger.debug("nodePath:%s exists ", nodePath)
-                event.wait(5)
-
+                self.stopEvent.wait(5)
 
     def checkServiceProvider(self):
         ''' self.serviceCache[servicePath][childName]
         '''
         self.logger.info("background service cache refresh thread start")
-        event = threading.Event()
-        while self.running:
+        while self.stopEvent.isSet():
             if not self.zk.connected:
                 self.logger.warning("zk connection lost , skip this time")
                 continue
@@ -112,7 +111,7 @@ class zkPyroClient(object):
                     del(self.serviceCache[name][childName])
                 for childName in set(childNames) - set(self.serviceCache[name].keys()):
                     self._addServiceCacheItem(name, childName)
-            event.wait(5)
+            self.stopEvent.wait(5)
 
     def zkConnectionReady(self):
         ''' May be not work
@@ -165,14 +164,11 @@ class zkPyroClient(object):
         nodePath = "{servicePath}/consumer/{node}".format(servicePath=servicePath, node=self.zk.client_id[0])
         providerPath = self.getProviderPath(name)
         try:
-            if self._firstLookup:
-                self.zk.create(nodePath, ephemeral=True, makepath=True)
-                self._firstLookup = False
-
             if name in self.serviceCache:
                 childNames = self.serviceCache[name].keys()
             else:
                 try:
+                    self.zk.create(nodePath, ephemeral=True, makepath=True)
                     childNames = self.zk.get_children(providerPath, include_data=False)
                     for childName in childNames:
                         self._addServiceCacheItem(name, childName)
@@ -182,8 +178,9 @@ class zkPyroClient(object):
                     childNames = []
 
             if len(childNames) == 0:
-                self.logger.error("No more service(%s) provider"%name)
-                raise Exception("No more service(%s) provider"%name)
+                ex = NoMoreServiceProviderException(name)
+                self.logger.error(ex.message)
+                raise ex
 
             if servicePath not in self.watchedServices:
                 self.logger.info("servicePath:%s add to cache", servicePath)
